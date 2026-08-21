@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f1420;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a3348;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4562;
+}
+
+.remote-cursor {
+  position: relative;
+  border-left: 2px solid;
+  margin-left: -1px;
+}
+
+.remote-cursor-label {
+  position: absolute;
+  top: -1.1em;
+  left: -2px;
+  font-size: 10px;
+  font-family: 'Segoe UI', sans-serif;
+  padding: 0 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  color: #0a0e14;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
