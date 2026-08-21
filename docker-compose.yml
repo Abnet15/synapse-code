@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  synapse-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: synapse-code-server
+    ports:
+      - '4000:4000'
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
