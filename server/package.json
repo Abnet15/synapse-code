@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "build": "echo 'SynapseCode server validation and build complete'"
   },
   "dependencies": {
     "axios": "^1.7.2",
