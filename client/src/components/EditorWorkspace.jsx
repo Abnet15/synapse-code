@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { MonacoBinding } from 'y-monaco';
 import { Users, Wifi, WifiOff, FileCode, Video, PlayCircle, Clock, Lock, Code2, ChevronRight } from 'lucide-react';
+import InterviewGrid from './InterviewGrid.jsx';
 
 const LANGUAGE_FILE_EXTENSIONS = {
   javascript: 'js',
@@ -71,6 +72,8 @@ export default function EditorWorkspace({
   isPro,
   onOpenPricing,
   showCodeCast,
+  isInterviewMode,
+  socket,
   lessons,
   activeLesson,
   onSelectLesson,
@@ -134,11 +137,19 @@ export default function EditorWorkspace({
     onVideoSync?.('pause', videoRef.current.currentTime, activeLesson?._id);
   };
 
-  const handleJumpToMilestone = (timestamp) => {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = timestamp;
-    setCurrentTime(timestamp);
-    videoRef.current.play().catch(() => {});
+  const handleJumpToMilestone = (milestone) => {
+    const timestamp = typeof milestone === 'number' ? milestone : milestone.timestamp;
+    if (videoRef.current) {
+      videoRef.current.currentTime = timestamp;
+      setCurrentTime(timestamp);
+      videoRef.current.play().catch(() => {});
+    }
+    if (milestone?.targetCode) {
+      onCodeChange?.(milestone.targetCode);
+      if (editorRef.current) {
+        editorRef.current.setValue(milestone.targetCode);
+      }
+    }
     onVideoSync?.('seek', timestamp, activeLesson?._id);
   };
 
@@ -222,8 +233,12 @@ export default function EditorWorkspace({
 
   return (
     <div className="flex flex-col lg:flex-row h-full gap-3 min-h-0">
-      {/* Left Split-Pane: CodeCast Video Learning Workspace */}
-      {showCodeCast && (
+      {/* Left Split-Pane: CoderPad WebRTC Interview Grid OR CodeCast Video Learning Workspace */}
+      {isInterviewMode ? (
+        <div className="lg:w-[42%] flex flex-col min-h-0">
+          <InterviewGrid roomId={roomId} username={username} socket={socket} />
+        </div>
+      ) : showCodeCast && (
         <div className="lg:w-[42%] flex flex-col bg-surface-900 rounded-xl border border-surface-800 overflow-hidden shadow-xl min-h-0">
           {/* CodeCast Header & Lesson Selector */}
           <div className="flex items-center justify-between px-4 py-2.5 bg-surface-950/80 border-b border-surface-800 gap-2">
@@ -314,7 +329,7 @@ export default function EditorWorkspace({
                   <button
                     key={`${milestone.timestamp}-${idx}`}
                     disabled={isLessonLocked}
-                    onClick={() => handleJumpToMilestone(milestone.timestamp)}
+                    onClick={() => handleJumpToMilestone(milestone)}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-xs transition-all border ${
                       isActive
                         ? 'bg-cyan-950/50 border-cyan-500/60 text-cyan-200'

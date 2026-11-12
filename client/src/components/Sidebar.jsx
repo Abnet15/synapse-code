@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileCode2, FolderOpen, Zap, Lock, Sparkles, LogOut, User as UserIcon, Video } from 'lucide-react';
+import { FileCode2, FolderOpen, Zap, Lock, Sparkles, LogOut, User as UserIcon, Video, Users } from 'lucide-react';
 
 export const LANGUAGES = [
   { id: 'javascript', label: 'JavaScript', file: 'main.js', requiresPro: false },
@@ -19,6 +19,8 @@ export default function Sidebar({
   user,
   showCodeCast,
   onToggleCodeCast,
+  isInterviewMode,
+  onToggleInterviewMode,
   onOpenPricing,
   onOpenAuth,
   onLogout,
@@ -60,8 +62,8 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* CodeCast Learning Hub Toggle */}
-      <div className="px-4 pt-4">
+      {/* Workspace Mode Toggles (CodeCast & Interview Grid) */}
+      <div className="px-4 pt-4 space-y-2">
         <button
           onClick={onToggleCodeCast}
           className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-bold transition-all border ${
@@ -76,6 +78,23 @@ export default function Sidebar({
           </div>
           <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-surface-950/70 text-cyan-400">
             {showCodeCast ? 'ON' : 'OFF'}
+          </span>
+        </button>
+
+        <button
+          onClick={onToggleInterviewMode}
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-bold transition-all border ${
+            isInterviewMode
+              ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/50 shadow-md shadow-emerald-950/30'
+              : 'bg-surface-800/70 text-gray-300 border-surface-700 hover:bg-surface-800'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Users size={15} className={isInterviewMode ? 'text-emerald-400' : 'text-gray-400'} />
+            <span>Interview Mode</span>
+          </div>
+          <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-surface-950/70 text-emerald-400">
+            {isInterviewMode ? 'ON' : 'OFF'}
           </span>
         </button>
       </div>

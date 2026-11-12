@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 
 exports.createRoom = async (req, res) => {
   try {
-    const { roomId, language, content } = req.body;
+    const { roomId, title, language, content, isInterviewMode } = req.body;
     const finalRoomId = roomId ? roomId.trim().toUpperCase() : uuidv4().slice(0, 8).toUpperCase();
 
     const existingRoom = await Room.findOne({ roomId: finalRoomId });
@@ -13,9 +13,11 @@ exports.createRoom = async (req, res) => {
 
     const room = new Room({
       roomId: finalRoomId,
+      title: title || `Workspace ${finalRoomId}`,
       owner: req.user._id,
       language: language || 'javascript',
       content: content || '',
+      isInterviewMode: Boolean(isInterviewMode),
       collaborators: [req.user._id],
     });
 
@@ -52,9 +54,9 @@ exports.getRoom = async (req, res) => {
       .populate('collaborators', 'username email');
 
     if (!room) {
-      // Auto-create room if accessed directly and user is authenticated
       room = new Room({
         roomId: roomId.toUpperCase(),
+        title: `Workspace ${roomId.toUpperCase()}`,
         owner: req.user._id,
         language: 'javascript',
         content: '',
@@ -63,7 +65,6 @@ exports.getRoom = async (req, res) => {
       await room.save();
       await room.populate('owner', 'username email isPro');
     } else {
-      // Add user to collaborators if not present
       if (req.user && !room.collaborators.some((c) => c._id.toString() === req.user._id.toString())) {
         room.collaborators.push(req.user._id);
         await room.save();
@@ -79,7 +80,7 @@ exports.getRoom = async (req, res) => {
 exports.saveRoom = async (req, res) => {
   try {
     const { roomId } = req.params;
-    const { content, language } = req.body;
+    const { content, language, title, isInterviewMode, interviewRubric } = req.body;
 
     const room = await Room.findOne({ roomId: roomId.toUpperCase() });
     if (!room) {
@@ -88,6 +89,9 @@ exports.saveRoom = async (req, res) => {
 
     if (content !== undefined) room.content = content;
     if (language !== undefined) room.language = language;
+    if (title !== undefined) room.title = title;
+    if (isInterviewMode !== undefined) room.isInterviewMode = Boolean(isInterviewMode);
+    if (interviewRubric !== undefined) room.interviewRubric = interviewRubric;
 
     await room.save();
 

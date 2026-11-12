@@ -12,7 +12,10 @@ const docker = new Docker({ socketPath: dockerSocket });
 
 const FREE_EXECUTION_TIMEOUT_MS = 3000;
 const PRO_EXECUTION_TIMEOUT_MS = 10000;
-const MEMORY_LIMIT_BYTES = 128 * 1024 * 1024;
+const FREE_MEMORY_LIMIT_BYTES = 128 * 1024 * 1024;
+const PRO_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024;
+const NANO_CPUS_LIMIT = 500000000; // 0.5 CPU
+const PIDS_LIMIT = 64;
 
 const LANGUAGE_CONFIG = {
   python: {
@@ -288,7 +291,7 @@ async function executeNativeFallback(normalizedLang, code, timeoutMs) {
 }
 
 /**
- * Execute code inside an isolated Docker container based on tier with self-healing local fallback
+ * Execute code inside an isolated Docker container with hardened security limits
  * @param {string} language - python, javascript, typescript, cpp, java, go, rust
  * @param {string} code - Source code to execute
  * @param {boolean} isPro - User SaaS tier status
@@ -325,6 +328,7 @@ async function executeCode(language, code, isPro = false) {
   }
 
   const timeoutMs = isPro ? PRO_EXECUTION_TIMEOUT_MS : FREE_EXECUTION_TIMEOUT_MS;
+  const memoryBytes = isPro ? PRO_MEMORY_LIMIT_BYTES : FREE_MEMORY_LIMIT_BYTES;
   const containerName = `synapse-exec-${uuidv4()}`;
   let container = null;
   let timedOut = false;
@@ -342,10 +346,10 @@ async function executeCode(language, code, isPro = false) {
       AttachStderr: true,
       NetworkDisabled: true,
       HostConfig: {
-        Memory: MEMORY_LIMIT_BYTES,
-        MemorySwap: MEMORY_LIMIT_BYTES,
-        CpuShares: 512,
-        PidsLimit: 64,
+        Memory: memoryBytes,
+        MemorySwap: memoryBytes,
+        NanoCpus: NANO_CPUS_LIMIT,
+        PidsLimit: PIDS_LIMIT,
         AutoRemove: false,
         NetworkMode: 'none',
         ReadonlyRootfs: false,
@@ -367,7 +371,7 @@ async function executeCode(language, code, isPro = false) {
       timeoutHandle = setTimeout(async () => {
         timedOut = true;
         try {
-          await container.kill();
+          await container.kill({ signal: 'SIGKILL' });
         } catch (killErr) {
           // Container already finished
         }
@@ -387,8 +391,8 @@ async function executeCode(language, code, isPro = false) {
     if (timedOut) {
       return {
         stdout: '',
-        stderr: `⏱️ Execution hardcapped and timed out after ${timeoutMs / 1000} seconds (${isPro ? 'Pro Limit' : 'Free Tier Limit'}). Upgrade to Pro for extended limits.`,
-        exitCode: 124,
+        stderr: `⏱️ Execution killed (SIGKILL) after ${timeoutMs / 1000}s (${isPro ? 'Pro Limit' : 'Free Tier Limit'}).`,
+        exitCode: 137,
         timedOut: true,
       };
     }
@@ -423,4 +427,31 @@ async function executeCode(language, code, isPro = false) {
   }
 }
 
-module.exports = { executeCode };
+/**
+ * Automated Interview Test-Case Runner (CoderPad Engine)
+ * Executes candidate code against expected stdout or assertion snippets.
+ */
+async function runTestCases(language, code, testCases = [], isPro = false) {
+  const results = [];
+  for (let i = 0; i < testCases.length; i += 1) {
+    const tc = testCases[i];
+    const combinedCode = tc.harness ? `${code}\n${tc.harness}` : code;
+    const execResult = await executeCode(language, combinedCode, isPro);
+    const actual = (execResult.stdout || '').trim();
+    const expected = (tc.expectedOutput || '').trim();
+    const passed = execResult.exitCode === 0 && actual === expected;
+
+    results.push({
+      id: tc.id || `tc-${i + 1}`,
+      name: tc.name || `Test Case ${i + 1}`,
+      passed,
+      expectedOutput: expected,
+      actualOutput: actual,
+      stderr: execResult.stderr || '',
+      exitCode: execResult.exitCode,
+    });
+  }
+  return results;
+}
+
+module.exports = { executeCode, runTestCases };

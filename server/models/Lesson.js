@@ -11,6 +11,10 @@ const milestoneSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    targetCode: {
+      type: String,
+      default: '',
+    },
   },
   { _id: false }
 );

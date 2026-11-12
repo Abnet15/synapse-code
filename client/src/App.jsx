@@ -222,6 +222,7 @@ export default function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [paymentBanner, setPaymentBanner] = useState(null);
   const [showCodeCast, setShowCodeCast] = useState(true);
+  const [isInterviewMode, setIsInterviewMode] = useState(false);
   const [lessons, setLessons] = useState([]);
   const [activeLesson, setActiveLesson] = useState(null);
 
@@ -286,16 +287,20 @@ export default function App() {
   const username = session?.username ?? (user?.username || null);
 
   const {
+    socket,
     isConnected,
     messages,
     output,
     isRunning,
+    testResults,
+    isTesting,
     userCount,
     tierWarning,
     videoSyncEvent,
     sendMessage,
     emitVideoSync,
     runCode,
+    runTests,
   } = useSocket(roomId, username, user);
 
   const handleJoin = useCallback((name, room) => {
@@ -375,7 +380,21 @@ export default function App() {
         userCount={userCount}
         user={user}
         showCodeCast={showCodeCast}
-        onToggleCodeCast={() => setShowCodeCast((prev) => !prev)}
+        onToggleCodeCast={() => {
+          setShowCodeCast((prev) => {
+            const next = !prev;
+            if (next) setIsInterviewMode(false);
+            return next;
+          });
+        }}
+        isInterviewMode={isInterviewMode}
+        onToggleInterviewMode={() => {
+          setIsInterviewMode((prev) => {
+            const next = !prev;
+            if (next) setShowCodeCast(false);
+            return next;
+          });
+        }}
         onOpenPricing={() => setIsPricingOpen(true)}
         onOpenAuth={() => setIsAuthOpen(true)}
         onLogout={handleLogout}
@@ -468,6 +487,8 @@ export default function App() {
                 isPro={user?.isPro}
                 onOpenPricing={() => setIsPricingOpen(true)}
                 showCodeCast={showCodeCast}
+                isInterviewMode={isInterviewMode}
+                socket={socket}
                 lessons={lessons}
                 activeLesson={activeLesson}
                 onSelectLesson={setActiveLesson}
@@ -483,8 +504,12 @@ export default function App() {
                 isRunning={isRunning}
                 onRun={handleRun}
                 language={language}
+                code={currentCode}
                 isPro={user?.isPro}
                 onOpenPricing={() => setIsPricingOpen(true)}
+                testResults={testResults}
+                isTesting={isTesting}
+                onRunTests={(testCases) => runTests(currentCode, language, testCases)}
               />
             </div>
           </div>

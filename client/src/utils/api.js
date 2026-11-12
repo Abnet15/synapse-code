@@ -50,11 +50,11 @@ export const api = {
   },
 
   // Rooms API
-  async createRoom(roomId, language, content) {
+  async createRoom(roomId, language, content, isInterviewMode = false) {
     const res = await fetch(`${API_BASE}/rooms`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ roomId, language, content }),
+      body: JSON.stringify({ roomId, language, content, isInterviewMode }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Failed to create room');
@@ -81,6 +81,17 @@ export const api = {
     return data;
   },
 
+  async saveRoom(roomId, updates) {
+    const res = await fetch(`${API_BASE}/rooms/${roomId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to save room');
+    return data;
+  },
+
   // CodeCast Lessons API
   async getLessons() {
     const res = await fetch(`${API_BASE}/lessons`, {
@@ -99,6 +110,18 @@ export const api = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Failed to fetch lesson');
+    return data;
+  },
+
+  // Gemini AI Assistant API
+  async assistCode(action, language, code) {
+    const res = await fetch(`${API_BASE}/ai/assist`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ action, language, code }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'AI Assistant failed');
     return data;
   },
 

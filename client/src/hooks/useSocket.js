@@ -12,10 +12,13 @@ const getSocketServerUrl = () => {
 
 export function useSocket(roomId, username, user) {
   const socketRef = useRef(null);
+  const [socketInstance, setSocketInstance] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState([]);
   const [output, setOutput] = useState({ stdout: '', stderr: '', exitCode: null, timedOut: false });
   const [isRunning, setIsRunning] = useState(false);
+  const [testResults, setTestResults] = useState([]);
+  const [isTesting, setIsTesting] = useState(false);
   const [userCount, setUserCount] = useState(1);
   const [tierWarning, setTierWarning] = useState(null);
   const [videoSyncEvent, setVideoSyncEvent] = useState(null);
@@ -36,6 +39,7 @@ export function useSocket(roomId, username, user) {
     });
 
     socketRef.current = socket;
+    setSocketInstance(socket);
 
     socket.on('connect', () => {
       setIsConnected(true);
@@ -84,6 +88,15 @@ export function useSocket(roomId, username, user) {
       setOutput(result);
     });
 
+    socket.on('tests-running', () => {
+      setIsTesting(true);
+    });
+
+    socket.on('test-results', ({ results }) => {
+      setIsTesting(false);
+      setTestResults(Array.isArray(results) ? results : []);
+    });
+
     socket.on('tier-warning', ({ message }) => {
       setTierWarning(message);
     });
@@ -95,6 +108,7 @@ export function useSocket(roomId, username, user) {
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setSocketInstance(null);
     };
   }, [roomId, username, isPro, user?.id]);
 
@@ -133,16 +147,28 @@ export function useSocket(roomId, username, user) {
     [roomId, isPro]
   );
 
+  const runTests = useCallback(
+    (code, language, testCases) => {
+      if (!socketRef.current) return;
+      socketRef.current.emit('run-tests', { roomId, code, language, testCases, isPro });
+    },
+    [roomId, isPro]
+  );
+
   return {
+    socket: socketInstance,
     isConnected,
     messages,
     output,
     isRunning,
+    testResults,
+    isTesting,
     userCount,
     tierWarning,
     videoSyncEvent,
     sendMessage,
     emitVideoSync,
     runCode,
+    runTests,
   };
 }

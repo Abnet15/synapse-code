@@ -7,12 +7,13 @@ const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
 const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
-const { executeCode } = require('./execute');
+const { executeCode, runTestCases } = require('./execute');
 
 const authRoutes = require('./routes/authRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const lessonRoutes = require('./routes/lessonRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 
 const User = require('./models/User');
 const Room = require('./models/Room');
@@ -24,7 +25,7 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGODB_LOCAL_URI || 
 const app = express();
 
 const allowedOrigins = [
-  process.env.WEB_CLIENT_URL || 'http://localhost:5173',
+  process.env.WEB_CLIENT_URL || 'http://localhost:8080',
   'http://localhost:5173',
   'http://localhost:8080',
   'http://localhost:3000',
@@ -56,15 +57,16 @@ app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/lessons', lessonRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', service: 'synapse-code-v2-server', env: process.env.NODE_ENV });
+  res.status(200).json({ status: 'ok', service: 'synapse-code-ultimate-server', env: process.env.NODE_ENV });
 });
 
 const httpServer = http.createServer(app);
 
 // ---------------------------------------------------------------------------
-// Socket.io: Room verification middleware, presence, chat, code & video-sync
+// Socket.io: Room presence, chat, WebRTC signaling, video-sync & execution
 // ---------------------------------------------------------------------------
 const io = new Server(httpServer, {
   cors: corsOptions,
@@ -83,7 +85,6 @@ io.use(async (socket, next) => {
     }
     return next();
   } catch (err) {
-    // Allow guest connections; room-level checks enforce collaborator caps
     return next();
   }
 });
@@ -103,7 +104,6 @@ io.on('connection', (socket) => {
 
     const normalizedRoomId = roomId.trim().toUpperCase();
 
-    // Verify room permissions if room exists in MongoDB
     try {
       const roomDoc = await Room.findOne({ roomId: normalizedRoomId }).populate('owner', 'isPro');
       if (roomDoc && roomDoc.owner && !roomDoc.owner.isPro) {
@@ -127,7 +127,7 @@ io.on('connection', (socket) => {
     }
     const roomUsers = roomUsersMap.get(normalizedRoomId);
     const effectivePro = socket.userIsPro !== undefined ? socket.userIsPro : Boolean(isPro);
-    roomUsers.set(socket.id, { username: currentUsername, isPro: effectivePro });
+    roomUsers.set(socket.id, { socketId: socket.id, username: currentUsername, isPro: effectivePro });
 
     const currentCount = roomUsers.size;
     roomUserCounts.set(normalizedRoomId, currentCount);
@@ -139,6 +139,7 @@ io.on('connection', (socket) => {
     }
 
     socket.to(normalizedRoomId).emit('user-joined', {
+      socketId: socket.id,
       user: currentUsername,
       timestamp: Date.now(),
       userCount: currentCount,
@@ -146,6 +147,7 @@ io.on('connection', (socket) => {
 
     socket.emit('room-joined', {
       roomId: normalizedRoomId,
+      selfSocketId: socket.id,
       userCount: currentCount,
       activeUsers: Array.from(roomUsers.values()).map((u) => u.username),
     });
@@ -175,6 +177,37 @@ io.on('connection', (socket) => {
       lessonId: lessonId || null,
       sender: currentUsername || 'Collaborator',
     });
+  });
+
+  // WebRTC Signaling Relay for Interview Mode
+  socket.on('offer', ({ roomId, targetSocketId, offer }) => {
+    if (!roomId || !offer) return;
+    const payload = { fromSocketId: socket.id, user: currentUsername, offer };
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('offer', payload);
+    } else {
+      socket.to(roomId.trim().toUpperCase()).emit('offer', payload);
+    }
+  });
+
+  socket.on('answer', ({ roomId, targetSocketId, answer }) => {
+    if (!roomId || !answer) return;
+    const payload = { fromSocketId: socket.id, user: currentUsername, answer };
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('answer', payload);
+    } else {
+      socket.to(roomId.trim().toUpperCase()).emit('answer', payload);
+    }
+  });
+
+  socket.on('ice-candidate', ({ roomId, targetSocketId, candidate }) => {
+    if (!roomId || !candidate) return;
+    const payload = { fromSocketId: socket.id, candidate };
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('ice-candidate', payload);
+    } else {
+      socket.to(roomId.trim().toUpperCase()).emit('ice-candidate', payload);
+    }
   });
 
   socket.on('run-code', async ({ roomId, code, language, isPro }) => {
@@ -215,6 +248,34 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('run-tests', async ({ roomId, code, language, testCases, isPro }) => {
+    if (!roomId || !code || !language || !Array.isArray(testCases)) {
+      socket.emit('test-results', { results: [], error: 'Invalid test-case payload.' });
+      return;
+    }
+
+    const normalizedRoomId = roomId.trim().toUpperCase();
+    let userIsPro = Boolean(isPro);
+
+    if (socket.userId) {
+      try {
+        const u = await User.findById(socket.userId);
+        if (u) userIsPro = u.isPro;
+      } catch (e) {
+        // Fallback to client flag
+      }
+    }
+
+    io.to(normalizedRoomId).emit('tests-running', { count: testCases.length });
+
+    try {
+      const results = await runTestCases(language, code, testCases, userIsPro);
+      io.to(normalizedRoomId).emit('test-results', { results });
+    } catch (err) {
+      io.to(normalizedRoomId).emit('test-results', { results: [], error: err.message });
+    }
+  });
+
   socket.on('cursor-update', ({ roomId, user, position }) => {
     if (!roomId) return;
     const normalizedRoomId = roomId.trim().toUpperCase();
@@ -233,6 +294,7 @@ io.on('connection', (socket) => {
       }
 
       socket.to(currentRoomId).emit('user-left', {
+        socketId: socket.id,
         user: currentUsername,
         timestamp: Date.now(),
         userCount: nextCount,
@@ -266,7 +328,7 @@ httpServer.on('upgrade', (request, socket, head) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`🚀 SynapseCode V2 Enterprise Server listening on port ${PORT}`);
-  console.log(`📡 Socket.io ready for real-time signaling, video-sync & code execution`);
+  console.log(`🚀 SynapseCode Ultimate Server listening on port ${PORT}`);
+  console.log(`📡 Socket.io ready for WebRTC signaling, video-sync, test-runner & execution`);
   console.log(`🔄 Yjs document sync endpoint available at ws://localhost:${PORT}/yjs`);
 });
