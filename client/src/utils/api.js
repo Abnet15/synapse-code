@@ -1,4 +1,11 @@
-const API_BASE = 'http://localhost:5000/api';
+const getApiBase = () => {
+  if (import.meta.env.VITE_SERVER_URL) {
+    return `${import.meta.env.VITE_SERVER_URL.replace(/\/$/, '')}/api`;
+  }
+  return 'http://localhost:5000/api';
+};
+
+const API_BASE = getApiBase();
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('synapse_token');
@@ -71,6 +78,27 @@ export const api = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Failed to fetch room');
+    return data;
+  },
+
+  // CodeCast Lessons API
+  async getLessons() {
+    const res = await fetch(`${API_BASE}/lessons`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to fetch CodeCast lessons');
+    return data;
+  },
+
+  async getLesson(lessonId) {
+    const res = await fetch(`${API_BASE}/lessons/${lessonId}`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to fetch lesson');
     return data;
   },
 

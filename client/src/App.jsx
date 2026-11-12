@@ -11,7 +11,7 @@ import { LogIn, Zap, Sparkles, AlertCircle, CheckCircle2, ShieldCheck } from 'lu
 
 const DEFAULT_SNIPPETS = {
   javascript: `// SynapseCode Real-time Ephemeral Workspace (JavaScript)
-console.log("Welcome to SynapseCode Enterprise!");
+console.log("Welcome to SynapseCode V2 Enterprise!");
 
 const users = [
   { name: "Ada", role: "Architect", tier: "Pro" },
@@ -33,6 +33,20 @@ def main():
 if __name__ == "__main__":
     main()
 `,
+  typescript: `// SynapseCode Pro Container Workspace (TypeScript)
+interface ServiceNode {
+  id: string;
+  region: string;
+  latencyMs: number;
+}
+
+const nodes: ServiceNode[] = [
+  { id: "nbo-01", region: "Africa-East", latencyMs: 14 },
+  { id: "los-02", region: "Africa-West", latencyMs: 19 },
+];
+
+console.log("⚡ SynapseCode TypeScript Runtime:", nodes);
+`,
   cpp: `// SynapseCode Pro Container Workspace (C++)
 #include <iostream>
 #include <vector>
@@ -46,6 +60,38 @@ int main() {
     
     std::cout << "Vector Sum: " << sum << std::endl;
     return 0;
+}
+`,
+  java: `// SynapseCode Pro Container Workspace (Java 17)
+import java.util.List;
+
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("☕ SynapseCode OpenJDK 17 Ephemeral Sandbox");
+        List<String> runtimes = List.of("Python", "Node.js", "TypeScript", "C++", "Java", "Go", "Rust");
+        System.out.println("Supported Runtimes: " + runtimes.size());
+    }
+}
+`,
+  go: `// SynapseCode Pro Container Workspace (Go 1.20)
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("🐹 SynapseCode Go 1.20 Ephemeral Sandbox")
+    regions := []string{"Addis Ababa", "Nairobi", "Lagos", "Johannesburg"}
+    for idx, city := range regions {
+        fmt.Printf("%d. Edge Node Active: %s\\n", idx+1, city)
+    }
+}
+`,
+  rust: `// SynapseCode Pro Container Workspace (Rust 1.70)
+fn main() {
+    println!("🦀 SynapseCode Rust 1.70 Ephemeral Sandbox");
+    let latencies = vec![12, 18, 9, 24, 15];
+    let avg: f64 = latencies.iter().sum::<i32>() as f64 / latencies.len() as f64;
+    println!("Average Edge Latency: {:.2}ms", avg);
 }
 `,
 };
@@ -73,19 +119,17 @@ function JoinScreen({ onJoin, user, onOpenAuth, onOpenPricing }) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-surface-950 p-4">
-      {/* Brand Header */}
       <div className="w-full max-w-md bg-surface-900 border border-surface-800 rounded-2xl p-8 shadow-2xl">
         <div className="flex items-center gap-3 justify-center mb-6">
           <div className="w-12 h-12 rounded-xl bg-cyan-950 border border-cyan-800 flex items-center justify-center text-cyan-400 shadow-lg shadow-cyan-950">
             <Zap size={28} />
           </div>
           <div>
-            <h1 className="font-extrabold text-white text-2xl tracking-tight">SynapseCode</h1>
-            <span className="text-xs text-cyan-400 font-semibold tracking-wider uppercase">Enterprise IDE</span>
+            <h1 className="font-extrabold text-white text-2xl tracking-tight">SynapseCode V2</h1>
+            <span className="text-xs text-cyan-400 font-semibold tracking-wider uppercase">CodeCast & Cloud IDE</span>
           </div>
         </div>
 
-        {/* User Status Bar */}
         <div className="mb-6 p-3 bg-surface-950/80 border border-surface-800 rounded-xl flex items-center justify-between text-xs">
           {user ? (
             <div className="flex items-center gap-2">
@@ -163,7 +207,7 @@ function JoinScreen({ onJoin, user, onOpenAuth, onOpenPricing }) {
 
       <div className="mt-6 text-center text-xs text-gray-500 flex items-center gap-2">
         <ShieldCheck size={14} className="text-cyan-500" />
-        <span>Chapa SaaS Gateway & Ephemeral Docker Execution Runtimes</span>
+        <span>Chapa SaaS Gateway & 7-Language Ephemeral Docker Sandboxes</span>
       </div>
     </div>
   );
@@ -177,8 +221,10 @@ export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [paymentBanner, setPaymentBanner] = useState(null);
+  const [showCodeCast, setShowCodeCast] = useState(true);
+  const [lessons, setLessons] = useState([]);
+  const [activeLesson, setActiveLesson] = useState(null);
 
-  // Load User profile from stored JWT token
   useEffect(() => {
     const token = localStorage.getItem('synapse_token');
     if (token) {
@@ -193,7 +239,20 @@ export default function App() {
     }
   }, []);
 
-  // Handle Chapa Payment Verification on Redirect Callback (?payment=success&tx_ref=...)
+  useEffect(() => {
+    api
+      .getLessons()
+      .then((res) => {
+        if (res.lessons && res.lessons.length > 0) {
+          setLessons(res.lessons);
+          setActiveLesson(res.lessons[0]);
+        }
+      })
+      .catch(() => {
+        // Fallback offline CodeCast lesson if server isn't reachable yet
+      });
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const paymentStatus = params.get('payment');
@@ -218,7 +277,6 @@ export default function App() {
           });
         })
         .finally(() => {
-          // Clean up URL parameters
           window.history.replaceState({}, document.title, window.location.pathname);
         });
     }
@@ -227,11 +285,18 @@ export default function App() {
   const roomId = session?.roomId ?? null;
   const username = session?.username ?? (user?.username || null);
 
-  const { isConnected, messages, output, isRunning, userCount, tierWarning, sendMessage, runCode } = useSocket(
-    roomId,
-    username,
-    user
-  );
+  const {
+    isConnected,
+    messages,
+    output,
+    isRunning,
+    userCount,
+    tierWarning,
+    videoSyncEvent,
+    sendMessage,
+    emitVideoSync,
+    runCode,
+  } = useSocket(roomId, username, user);
 
   const handleJoin = useCallback((name, room) => {
     setSession({ username: name, roomId: room });
@@ -242,6 +307,22 @@ export default function App() {
       setCodeByLanguage((prev) => ({ ...prev, [language]: value }));
     },
     [language]
+  );
+
+  const handleLoadLessonCode = useCallback(
+    (lesson) => {
+      if (!lesson) return;
+      const targetLang = lesson.language || 'javascript';
+      if (lesson.requiresPro && !user?.isPro) {
+        setIsPricingOpen(true);
+        return;
+      }
+      setLanguage(targetLang);
+      if (lesson.initialCode) {
+        setCodeByLanguage((prev) => ({ ...prev, [targetLang]: lesson.initialCode }));
+      }
+    },
+    [user?.isPro]
   );
 
   const handleRun = useCallback(() => {
@@ -287,21 +368,20 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen bg-surface-950 text-gray-200 overflow-hidden font-sans">
-      {/* Left Navigation Sidebar */}
       <Sidebar
         roomId={roomId}
         language={language}
         onLanguageChange={setLanguage}
         userCount={userCount}
         user={user}
+        showCodeCast={showCodeCast}
+        onToggleCodeCast={() => setShowCodeCast((prev) => !prev)}
         onOpenPricing={() => setIsPricingOpen(true)}
         onOpenAuth={() => setIsAuthOpen(true)}
         onLogout={handleLogout}
       />
 
-      {/* Main Studio Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Payment / Tier Banner Notifications */}
         {paymentBanner && (
           <div
             className={`px-4 py-2 flex items-center justify-between text-xs font-bold ${
@@ -342,7 +422,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Top Header Workspace Status Bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-surface-800 bg-surface-900">
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-400">
@@ -376,21 +455,28 @@ export default function App() {
           </div>
         </div>
 
-        {/* Main Content Workspace Layout */}
         <div className="flex-1 flex gap-3 p-3 min-h-0 bg-surface-950">
           <div className="flex-1 flex flex-col gap-3 min-w-0">
-            {/* Monaco Editor Component */}
             <div className="flex-[3] min-h-0">
               <EditorWorkspace
                 roomId={roomId}
                 username={username}
                 language={language}
+                onLanguageChange={setLanguage}
                 code={currentCode}
                 onCodeChange={handleCodeChange}
+                isPro={user?.isPro}
+                onOpenPricing={() => setIsPricingOpen(true)}
+                showCodeCast={showCodeCast}
+                lessons={lessons}
+                activeLesson={activeLesson}
+                onSelectLesson={setActiveLesson}
+                onLoadLessonCode={handleLoadLessonCode}
+                videoSyncEvent={videoSyncEvent}
+                onVideoSync={emitVideoSync}
               />
             </div>
 
-            {/* Docker Execution Terminal Console */}
             <div className="flex-[2] min-h-0">
               <OutputConsole
                 output={output}
@@ -403,14 +489,12 @@ export default function App() {
             </div>
           </div>
 
-          {/* Real-time Team Chat Sidebar Panel */}
           <div className="w-80 flex-shrink-0">
             <ChatPanel messages={messages} username={username} onSendMessage={sendMessage} />
           </div>
         </div>
       </div>
 
-      {/* Global Modals */}
       <PricingModal
         isOpen={isPricingOpen}
         onClose={() => setIsPricingOpen(false)}

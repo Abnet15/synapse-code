@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Zap, Check, X, Shield, Cpu, Users, Clock, CreditCard, Sparkles } from 'lucide-react';
+import { Zap, Check, X, Shield, CreditCard, Sparkles } from 'lucide-react';
 import { api } from '../utils/api';
 
-export default function PricingModal({ isOpen, onClose, user, onPaymentSuccess }) {
+export default function PricingModal({ isOpen, onClose, user }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -20,7 +20,6 @@ export default function PricingModal({ isOpen, onClose, user, onPaymentSuccess }
     try {
       const data = await api.initializePayment();
       if (data.checkout_url) {
-        // Redirect user to Chapa secure checkout page
         window.location.href = data.checkout_url;
       } else {
         throw new Error('No checkout URL returned from payment gateway.');
@@ -38,7 +37,7 @@ export default function PricingModal({ isOpen, onClose, user, onPaymentSuccess }
         <div className="flex items-center justify-between px-6 py-4 border-b border-surface-800 bg-surface-950/60">
           <div className="flex items-center gap-2">
             <Zap className="text-cyan-400" size={24} />
-            <h2 className="text-xl font-bold text-white tracking-tight">SynapseCode SaaS Subscription</h2>
+            <h2 className="text-xl font-bold text-white tracking-tight">SynapseCode V2 SaaS Subscription</h2>
           </div>
           <button
             onClick={onClose}
@@ -53,7 +52,8 @@ export default function PricingModal({ isOpen, onClose, user, onPaymentSuccess }
           <div className="text-center mb-8">
             <h3 className="text-2xl md:text-3xl font-extrabold text-white">Choose the Plan That Fits Your Workflow</h3>
             <p className="text-gray-400 text-sm mt-2 max-w-xl mx-auto">
-              Supercharge your collaborative coding experience with high-performance sandboxes and seamless localized African payment gateway via <span className="text-cyan-400 font-semibold">Chapa</span>.
+              Unlock all 7 isolated Docker runtimes, CodeCast masterclass video lessons, and seamless localized payments via{' '}
+              <span className="text-cyan-400 font-semibold">Chapa</span>.
             </p>
           </div>
 
@@ -85,19 +85,23 @@ export default function PricingModal({ isOpen, onClose, user, onPaymentSuccess }
                   </li>
                   <li className="flex items-center gap-2.5">
                     <Check size={16} className="text-emerald-400 flex-shrink-0" />
-                    <span><strong>3-second</strong> execution timeout cap</span>
+                    <span><strong>3-second</strong> execution timeout cap (128MB RAM)</span>
                   </li>
                   <li className="flex items-center gap-2.5">
                     <Check size={16} className="text-emerald-400 flex-shrink-0" />
-                    <span>Python & JavaScript runtime support</span>
+                    <span><strong>2 Runtimes:</strong> Python & JavaScript</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={16} className="text-emerald-400 flex-shrink-0" />
+                    <span>Starter CodeCast interactive lessons</span>
                   </li>
                   <li className="flex items-center gap-2.5 opacity-50">
                     <X size={16} className="text-gray-500 flex-shrink-0" />
-                    <span className="line-through">C++ container runtime</span>
+                    <span className="line-through">TypeScript, C++, Java, Go & Rust runtimes</span>
                   </li>
                   <li className="flex items-center gap-2.5 opacity-50">
                     <X size={16} className="text-gray-500 flex-shrink-0" />
-                    <span className="line-through">Priority container queue</span>
+                    <span className="line-through">Pro CodeCast Masterclass Video Library</span>
                   </li>
                 </ul>
               </div>
@@ -135,7 +139,7 @@ export default function PricingModal({ isOpen, onClose, user, onPaymentSuccess }
                 <ul className="space-y-3.5 mb-6 text-sm text-gray-200">
                   <li className="flex items-center gap-2.5">
                     <Check size={16} className="text-cyan-400 flex-shrink-0" />
-                    <span><strong>Unlimited</strong> room collaborators</span>
+                    <span><strong>Unlimited</strong> room collaborators & Yjs sync</span>
                   </li>
                   <li className="flex items-center gap-2.5">
                     <Check size={16} className="text-cyan-400 flex-shrink-0" />
@@ -143,15 +147,15 @@ export default function PricingModal({ isOpen, onClose, user, onPaymentSuccess }
                   </li>
                   <li className="flex items-center gap-2.5">
                     <Check size={16} className="text-cyan-400 flex-shrink-0" />
-                    <span>Multi-runtime: <strong>Python, Node.js & C++</strong></span>
+                    <span>All <strong>7 Runtimes:</strong> Python, JS, TS, C++, Java, Go & Rust</span>
                   </li>
                   <li className="flex items-center gap-2.5">
                     <Check size={16} className="text-cyan-400 flex-shrink-0" />
-                    <span>Priority ephemeral container queue</span>
+                    <span>Full <strong>CodeCast Masterclass</strong> video library access</span>
                   </li>
                   <li className="flex items-center gap-2.5">
                     <Check size={16} className="text-cyan-400 flex-shrink-0" />
-                    <span>Advanced AI code refactoring & speedups</span>
+                    <span>Priority ephemeral Docker container allocation</span>
                   </li>
                 </ul>
               </div>
@@ -162,7 +166,7 @@ export default function PricingModal({ isOpen, onClose, user, onPaymentSuccess }
                 className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-cyan-500/20 transition-all duration-200 disabled:opacity-50 cursor-pointer"
               >
                 <CreditCard size={18} />
-                {loading ? 'Connecting to Chapa...' : 'Upgrade with Chapa Gateway'}
+                {loading ? 'Connecting to Chapa...' : 'Upgrade with Chapa'}
               </button>
             </div>
           </div>

@@ -3,6 +3,7 @@ const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
 const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
@@ -10,30 +11,38 @@ const { executeCode } = require('./execute');
 
 const authRoutes = require('./routes/authRoutes');
 const roomRoutes = require('./routes/roomRoutes');
+const lessonRoutes = require('./routes/lessonRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 
 const User = require('./models/User');
+const Room = require('./models/Room');
 
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-enterprise-grade-hash';
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGODB_LOCAL_URI || 'mongodb://localhost:27017/SynapseCode';
 
 const app = express();
 
-// Enable CORS matching environment config
 const allowedOrigins = [
-  process.env.WEB_CLIENT_URL || 'http://localhost:8080',
+  process.env.WEB_CLIENT_URL || 'http://localhost:5173',
   'http://localhost:5173',
+  'http://localhost:8080',
   'http://localhost:3000',
-  '*',
 ];
 
-app.use(
-  cors({
-    origin: '*',
-    credentials: true,
-  })
-);
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS policy'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true,
+};
 
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Connect to MongoDB
@@ -42,25 +51,41 @@ mongoose
   .then(() => console.log('✅ Connected to MongoDB Database successfully.'))
   .catch((err) => console.warn('⚠️ MongoDB connection warning:', err.message));
 
-// Register REST APIs
+// Register Modular REST APIs
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/lessons', lessonRoutes);
 app.use('/api/payments', paymentRoutes);
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', service: 'synapse-code-server', env: process.env.NODE_ENV });
+  res.status(200).json({ status: 'ok', service: 'synapse-code-v2-server', env: process.env.NODE_ENV });
 });
 
 const httpServer = http.createServer(app);
 
 // ---------------------------------------------------------------------------
-// Socket.io: Room presence, chat signaling, and code execution routing
+// Socket.io: Room verification middleware, presence, chat, code & video-sync
 // ---------------------------------------------------------------------------
 const io = new Server(httpServer, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-  },
+  cors: corsOptions,
+});
+
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (token) {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const user = await User.findById(decoded.id).select('-password');
+      if (user) {
+        socket.userId = user._id.toString();
+        socket.userIsPro = Boolean(user.isPro);
+      }
+    }
+    return next();
+  } catch (err) {
+    // Allow guest connections; room-level checks enforce collaborator caps
+    return next();
+  }
 });
 
 const roomUserCounts = new Map();
@@ -70,41 +95,57 @@ io.on('connection', (socket) => {
   let currentRoomId = null;
   let currentUsername = null;
 
-  socket.on('join-room', async ({ roomId, user, userId, isPro }) => {
+  socket.on('join-room', async ({ roomId, user, isPro }) => {
     if (!roomId || typeof roomId !== 'string') {
       socket.emit('error-message', { message: 'A valid roomId is required to join.' });
       return;
     }
 
-    currentRoomId = roomId;
-    currentUsername = user || 'Anonymous';
-    socket.join(roomId);
+    const normalizedRoomId = roomId.trim().toUpperCase();
 
-    // Track active users in room
-    if (!roomUsersMap.has(roomId)) {
-      roomUsersMap.set(roomId, new Map());
+    // Verify room permissions if room exists in MongoDB
+    try {
+      const roomDoc = await Room.findOne({ roomId: normalizedRoomId }).populate('owner', 'isPro');
+      if (roomDoc && roomDoc.owner && !roomDoc.owner.isPro) {
+        const currentInRoom = roomUsersMap.has(normalizedRoomId) ? roomUsersMap.get(normalizedRoomId).size : 0;
+        if (currentInRoom >= 2) {
+          socket.emit('tier-warning', {
+            message: '⚠️ Free Tier rooms are limited to 2 active collaborators. Upgrade to Pro for unlimited collaborators!',
+          });
+        }
+      }
+    } catch (e) {
+      // Non-fatal if DB lookup is unavailable
     }
-    const roomUsers = roomUsersMap.get(roomId);
-    roomUsers.set(socket.id, { username: currentUsername, isPro: !!isPro });
+
+    currentRoomId = normalizedRoomId;
+    currentUsername = user || 'Anonymous';
+    socket.join(normalizedRoomId);
+
+    if (!roomUsersMap.has(normalizedRoomId)) {
+      roomUsersMap.set(normalizedRoomId, new Map());
+    }
+    const roomUsers = roomUsersMap.get(normalizedRoomId);
+    const effectivePro = socket.userIsPro !== undefined ? socket.userIsPro : Boolean(isPro);
+    roomUsers.set(socket.id, { username: currentUsername, isPro: effectivePro });
 
     const currentCount = roomUsers.size;
-    roomUserCounts.set(roomId, currentCount);
+    roomUserCounts.set(normalizedRoomId, currentCount);
 
-    // Free Tier Room Collaborator Cap Check (Max 2 collaborators if not Pro)
-    if (!isPro && currentCount > 2) {
+    if (!effectivePro && currentCount > 2) {
       socket.emit('tier-warning', {
         message: '⚠️ Free Tier rooms are limited to 2 active collaborators. Upgrade to Pro for unlimited collaborators!',
       });
     }
 
-    socket.to(roomId).emit('user-joined', {
+    socket.to(normalizedRoomId).emit('user-joined', {
       user: currentUsername,
       timestamp: Date.now(),
       userCount: currentCount,
     });
 
     socket.emit('room-joined', {
-      roomId,
+      roomId: normalizedRoomId,
       userCount: currentCount,
       activeUsers: Array.from(roomUsers.values()).map((u) => u.username),
     });
@@ -115,13 +156,25 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const normalizedRoomId = roomId.trim().toUpperCase();
     const payload = {
       user: user || currentUsername || 'Anonymous',
       message,
       timestamp: timestamp || Date.now(),
     };
 
-    io.to(roomId).emit('receive-message', payload);
+    io.to(normalizedRoomId).emit('receive-message', payload);
+  });
+
+  socket.on('video-sync', ({ roomId, action, currentTime, lessonId }) => {
+    if (!roomId || !action) return;
+    const normalizedRoomId = roomId.trim().toUpperCase();
+    socket.to(normalizedRoomId).emit('video-sync', {
+      action,
+      currentTime: typeof currentTime === 'number' ? currentTime : 0,
+      lessonId: lessonId || null,
+      sender: currentUsername || 'Collaborator',
+    });
   });
 
   socket.on('run-code', async ({ roomId, code, language, isPro }) => {
@@ -135,8 +188,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Determine user Pro status from request or database
-    let userIsPro = !!isPro;
+    const normalizedRoomId = roomId.trim().toUpperCase();
+    let userIsPro = Boolean(isPro);
+
     if (socket.userId) {
       try {
         const u = await User.findById(socket.userId);
@@ -146,13 +200,13 @@ io.on('connection', (socket) => {
       }
     }
 
-    io.to(roomId).emit('code-running', { language });
+    io.to(normalizedRoomId).emit('code-running', { language });
 
     try {
       const result = await executeCode(language, code, userIsPro);
-      io.to(roomId).emit('code-output', result);
+      io.to(normalizedRoomId).emit('code-output', result);
     } catch (err) {
-      io.to(roomId).emit('code-output', {
+      io.to(normalizedRoomId).emit('code-output', {
         stdout: '',
         stderr: `Unexpected execution error: ${err.message}`,
         exitCode: 1,
@@ -163,7 +217,8 @@ io.on('connection', (socket) => {
 
   socket.on('cursor-update', ({ roomId, user, position }) => {
     if (!roomId) return;
-    socket.to(roomId).emit('cursor-update', { user: user || currentUsername, position });
+    const normalizedRoomId = roomId.trim().toUpperCase();
+    socket.to(normalizedRoomId).emit('cursor-update', { user: user || currentUsername, position });
   });
 
   socket.on('disconnect', () => {
@@ -204,7 +259,6 @@ httpServer.on('upgrade', (request, socket, head) => {
       yjsWss.emit('connection', ws, request);
     });
   } else if (pathname.startsWith('/socket.io')) {
-    // Socket.io manages its upgrade handling internally
     return;
   } else {
     socket.destroy();
@@ -212,7 +266,7 @@ httpServer.on('upgrade', (request, socket, head) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`🚀 SynapseCode Enterprise Server listening on port ${PORT}`);
-  console.log(`📡 Socket.io ready for real-time signaling & code execution`);
+  console.log(`🚀 SynapseCode V2 Enterprise Server listening on port ${PORT}`);
+  console.log(`📡 Socket.io ready for real-time signaling, video-sync & code execution`);
   console.log(`🔄 Yjs document sync endpoint available at ws://localhost:${PORT}/yjs`);
 });

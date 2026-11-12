@@ -27,6 +27,19 @@ const LANGUAGE_CONFIG = {
     ext: 'js',
     requiresPro: false,
   },
+  typescript: {
+    image: 'node:18-alpine',
+    buildCmd: (code) => {
+      const base64Code = Buffer.from(code, 'utf-8').toString('base64');
+      const shellScript =
+        "echo '" +
+        base64Code +
+        "' | base64 -d > main.ts && npx --yes ts-node main.ts";
+      return ['sh', '-c', shellScript];
+    },
+    ext: 'ts',
+    requiresPro: true,
+  },
   cpp: {
     image: 'gcc:latest',
     buildCmd: (code) => {
@@ -38,6 +51,45 @@ const LANGUAGE_CONFIG = {
       return ['bash', '-c', shellScript];
     },
     ext: 'cpp',
+    requiresPro: true,
+  },
+  java: {
+    image: 'openjdk:17-alpine',
+    buildCmd: (code) => {
+      const base64Code = Buffer.from(code, 'utf-8').toString('base64');
+      const shellScript =
+        "echo '" +
+        base64Code +
+        "' | base64 -d > Main.java && javac Main.java && java Main";
+      return ['sh', '-c', shellScript];
+    },
+    ext: 'java',
+    requiresPro: true,
+  },
+  go: {
+    image: 'golang:1.20-alpine',
+    buildCmd: (code) => {
+      const base64Code = Buffer.from(code, 'utf-8').toString('base64');
+      const shellScript =
+        "echo '" +
+        base64Code +
+        "' | base64 -d > main.go && go run main.go";
+      return ['sh', '-c', shellScript];
+    },
+    ext: 'go',
+    requiresPro: true,
+  },
+  rust: {
+    image: 'rust:1.70-alpine',
+    buildCmd: (code) => {
+      const base64Code = Buffer.from(code, 'utf-8').toString('base64');
+      const shellScript =
+        "echo '" +
+        base64Code +
+        "' | base64 -d > main.rs && rustc main.rs -o app && ./app";
+      return ['sh', '-c', shellScript];
+    },
+    ext: 'rs',
     requiresPro: true,
   },
 };
@@ -109,85 +161,135 @@ async function forceRemoveContainer(container) {
   }
 }
 
-/**
- * Native execution fallback when Docker daemon is not active on host machine
- */
-function executeNativeFallback(normalizedLang, code, timeoutMs) {
-  return new Promise((resolve) => {
-    const tmpDir = os.tmpdir();
-    const uniqueId = uuidv4().slice(0, 8);
-    const config = LANGUAGE_CONFIG[normalizedLang];
-    const codeFile = path.join(tmpDir, `synapse_${uniqueId}.${config.ext}`);
-    const binFile = path.join(tmpDir, `synapse_${uniqueId}.exe`);
-
-    fs.writeFileSync(codeFile, code, 'utf-8');
-
-    let execCmd = '';
-    let execArgs = [];
-
-    if (normalizedLang === 'javascript') {
-      execCmd = 'node';
-      execArgs = [codeFile];
-    } else if (normalizedLang === 'python') {
-      execCmd = process.platform === 'win32' ? 'python' : 'python3';
-      execArgs = [codeFile];
-    } else if (normalizedLang === 'cpp') {
-      execCmd = 'g++';
-      execArgs = [codeFile, '-o', binFile];
+function cleanupFiles(files) {
+  for (const filePath of files) {
+    try {
+      if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (e) {
+      // Ignore cleanup errors
     }
+  }
+}
 
-    if (normalizedLang === 'cpp') {
-      execFile(execCmd, execArgs, { timeout: timeoutMs }, (compileErr, compileStdout, compileStderr) => {
-        if (compileErr) {
-          try { if (fs.existsSync(codeFile)) fs.unlinkSync(codeFile); } catch (e) {}
-          return resolve({
-            stdout: compileStdout || '',
-            stderr: compileStderr || compileErr.message,
-            exitCode: compileErr.code || 1,
-            timedOut: false,
-          });
-        }
-
-        execFile(binFile, [], { timeout: timeoutMs }, (runErr, runStdout, runStderr) => {
-          try {
-            if (fs.existsSync(codeFile)) fs.unlinkSync(codeFile);
-            if (fs.existsSync(binFile)) fs.unlinkSync(binFile);
-          } catch (e) {}
-          return resolve({
-            stdout: runStdout || '',
-            stderr: runStderr || (runErr ? runErr.message : ''),
-            exitCode: runErr ? (runErr.code || 1) : 0,
-            timedOut: runErr?.killed || false,
-          });
-        });
-      });
-    } else {
-      execFile(execCmd, execArgs, { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
-        try { if (fs.existsSync(codeFile)) fs.unlinkSync(codeFile); } catch (e) {}
-
-        if (error && error.killed) {
-          return resolve({
-            stdout: stdout || '',
-            stderr: `⏱️ Execution hardcapped and timed out after ${timeoutMs / 1000} seconds.`,
-            exitCode: 124,
-            timedOut: true,
-          });
-        }
-
+function runProcess(cmd, args, cwd, timeoutMs) {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { cwd, timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error && error.killed) {
         return resolve({
           stdout: stdout || '',
-          stderr: stderr || (error ? error.message : ''),
-          exitCode: error ? (typeof error.code === 'number' ? error.code : 1) : 0,
-          timedOut: false,
+          stderr: `⏱️ Execution hardcapped and timed out after ${timeoutMs / 1000} seconds.`,
+          exitCode: 124,
+          timedOut: true,
         });
+      }
+
+      return resolve({
+        stdout: stdout || '',
+        stderr: stderr || (error ? error.message : ''),
+        exitCode: error ? (typeof error.code === 'number' ? error.code : 1) : 0,
+        timedOut: false,
       });
-    }
+    });
   });
 }
 
 /**
+ * Native execution fallback when Docker daemon is not active on host machine
+ */
+async function executeNativeFallback(normalizedLang, code, timeoutMs) {
+  const tmpDir = os.tmpdir();
+  const uniqueId = uuidv4().slice(0, 8);
+  const config = LANGUAGE_CONFIG[normalizedLang];
+  const isWin = process.platform === 'win32';
+  const exeExt = isWin ? '.exe' : '';
+
+  const createdFiles = [];
+
+  try {
+    if (normalizedLang === 'javascript') {
+      const codeFile = path.join(tmpDir, `synapse_${uniqueId}.js`);
+      fs.writeFileSync(codeFile, code, 'utf-8');
+      createdFiles.push(codeFile);
+      return await runProcess('node', [codeFile], tmpDir, timeoutMs);
+    }
+
+    if (normalizedLang === 'python') {
+      const codeFile = path.join(tmpDir, `synapse_${uniqueId}.py`);
+      fs.writeFileSync(codeFile, code, 'utf-8');
+      createdFiles.push(codeFile);
+      return await runProcess(isWin ? 'python' : 'python3', [codeFile], tmpDir, timeoutMs);
+    }
+
+    if (normalizedLang === 'typescript') {
+      const codeFile = path.join(tmpDir, `synapse_${uniqueId}.ts`);
+      fs.writeFileSync(codeFile, code, 'utf-8');
+      createdFiles.push(codeFile);
+      const npxCmd = isWin ? 'npx.cmd' : 'npx';
+      return await runProcess(npxCmd, ['--yes', 'ts-node', codeFile], tmpDir, timeoutMs);
+    }
+
+    if (normalizedLang === 'cpp') {
+      const codeFile = path.join(tmpDir, `synapse_${uniqueId}.cpp`);
+      const binFile = path.join(tmpDir, `synapse_${uniqueId}${exeExt}`);
+      fs.writeFileSync(codeFile, code, 'utf-8');
+      createdFiles.push(codeFile, binFile);
+      const compileRes = await runProcess('g++', [codeFile, '-o', binFile], tmpDir, timeoutMs);
+      if (compileRes.exitCode !== 0) return compileRes;
+      return await runProcess(binFile, [], tmpDir, timeoutMs);
+    }
+
+    if (normalizedLang === 'java') {
+      const javaDir = path.join(tmpDir, `synapse_java_${uniqueId}`);
+      fs.mkdirSync(javaDir, { recursive: true });
+      const codeFile = path.join(javaDir, 'Main.java');
+      const classFile = path.join(javaDir, 'Main.class');
+      fs.writeFileSync(codeFile, code, 'utf-8');
+      createdFiles.push(codeFile, classFile);
+      try {
+        const compileRes = await runProcess('javac', [codeFile], javaDir, timeoutMs);
+        if (compileRes.exitCode !== 0) return compileRes;
+        return await runProcess('java', ['-cp', javaDir, 'Main'], javaDir, timeoutMs);
+      } finally {
+        cleanupFiles(createdFiles);
+        try {
+          if (fs.existsSync(javaDir)) fs.rmSync(javaDir, { recursive: true, force: true });
+        } catch (e) {}
+      }
+    }
+
+    if (normalizedLang === 'go') {
+      const codeFile = path.join(tmpDir, `synapse_${uniqueId}.go`);
+      fs.writeFileSync(codeFile, code, 'utf-8');
+      createdFiles.push(codeFile);
+      return await runProcess('go', ['run', codeFile], tmpDir, timeoutMs);
+    }
+
+    if (normalizedLang === 'rust') {
+      const codeFile = path.join(tmpDir, `synapse_${uniqueId}.rs`);
+      const binFile = path.join(tmpDir, `synapse_${uniqueId}${exeExt}`);
+      fs.writeFileSync(codeFile, code, 'utf-8');
+      createdFiles.push(codeFile, binFile);
+      const compileRes = await runProcess('rustc', [codeFile, '-o', binFile], tmpDir, timeoutMs);
+      if (compileRes.exitCode !== 0) return compileRes;
+      return await runProcess(binFile, [], tmpDir, timeoutMs);
+    }
+
+    return {
+      stdout: '',
+      stderr: `Unsupported fallback language: ${config.ext}`,
+      exitCode: 1,
+      timedOut: false,
+    };
+  } finally {
+    cleanupFiles(createdFiles);
+  }
+}
+
+/**
  * Execute code inside an isolated Docker container based on tier with self-healing local fallback
- * @param {string} language - python, javascript, cpp
+ * @param {string} language - python, javascript, typescript, cpp, java, go, rust
  * @param {string} code - Source code to execute
  * @param {boolean} isPro - User SaaS tier status
  */
@@ -198,17 +300,16 @@ async function executeCode(language, code, isPro = false) {
   if (!config) {
     return {
       stdout: '',
-      stderr: `Unsupported language: ${language}. Supported runtimes: Python, JavaScript, and C++ (Pro).`,
+      stderr: `Unsupported language: ${language}. Supported runtimes: Python, JavaScript, TypeScript, C++, Java, Go, and Rust.`,
       exitCode: 1,
       timedOut: false,
     };
   }
 
-  // Tier check for language access
   if (config.requiresPro && !isPro) {
     return {
       stdout: '',
-      stderr: '🔒 C++ container execution requires a SynapseCode Pro Subscription. Upgrade to Pro to unlock C++ and extended timeouts.',
+      stderr: `🔒 ${normalizedLang.toUpperCase()} container execution requires a SynapseCode Pro Subscription. Upgrade to Pro to unlock all 7 runtimes and 10s timeouts.`,
       exitCode: 403,
       timedOut: false,
     };
@@ -299,7 +400,6 @@ async function executeCode(language, code, isPro = false) {
       timedOut: false,
     };
   } catch (err) {
-    // If Docker socket fails (ENOENT, ECONNREFUSED, connect error), run self-healing native fallback
     if (
       err.code === 'ENOENT' ||
       err.code === 'ECONNREFUSED' ||

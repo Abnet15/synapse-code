@@ -18,6 +18,7 @@ export function useSocket(roomId, username, user) {
   const [isRunning, setIsRunning] = useState(false);
   const [userCount, setUserCount] = useState(1);
   const [tierWarning, setTierWarning] = useState(null);
+  const [videoSyncEvent, setVideoSyncEvent] = useState(null);
 
   const isPro = user?.isPro || false;
 
@@ -25,7 +26,9 @@ export function useSocket(roomId, username, user) {
     if (!roomId) return undefined;
 
     const socketUrl = getSocketServerUrl();
+    const token = localStorage.getItem('synapse_token');
     const socket = io(socketUrl, {
+      auth: token ? { token } : {},
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -67,6 +70,10 @@ export function useSocket(roomId, username, user) {
       setMessages((prev) => [...prev, payload]);
     });
 
+    socket.on('video-sync', (payload) => {
+      setVideoSyncEvent({ ...payload, receivedAt: Date.now() });
+    });
+
     socket.on('code-running', () => {
       setIsRunning(true);
       setOutput({ stdout: '', stderr: '', exitCode: null, timedOut: false });
@@ -105,6 +112,19 @@ export function useSocket(roomId, username, user) {
     [roomId, username]
   );
 
+  const emitVideoSync = useCallback(
+    (action, currentTime, lessonId) => {
+      if (!socketRef.current || !roomId) return;
+      socketRef.current.emit('video-sync', {
+        roomId,
+        action,
+        currentTime,
+        lessonId,
+      });
+    },
+    [roomId]
+  );
+
   const runCode = useCallback(
     (code, language) => {
       if (!socketRef.current) return;
@@ -120,7 +140,9 @@ export function useSocket(roomId, username, user) {
     isRunning,
     userCount,
     tierWarning,
+    videoSyncEvent,
     sendMessage,
+    emitVideoSync,
     runCode,
   };
 }

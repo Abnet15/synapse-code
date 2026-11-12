@@ -1,10 +1,14 @@
 import React from 'react';
-import { FileCode2, FolderOpen, Zap, Lock, Sparkles, LogOut, User as UserIcon } from 'lucide-react';
+import { FileCode2, FolderOpen, Zap, Lock, Sparkles, LogOut, User as UserIcon, Video } from 'lucide-react';
 
-const LANGUAGES = [
+export const LANGUAGES = [
   { id: 'javascript', label: 'JavaScript', file: 'main.js', requiresPro: false },
   { id: 'python', label: 'Python', file: 'main.py', requiresPro: false },
+  { id: 'typescript', label: 'TypeScript', file: 'main.ts', requiresPro: true },
   { id: 'cpp', label: 'C++', file: 'main.cpp', requiresPro: true },
+  { id: 'java', label: 'Java', file: 'Main.java', requiresPro: true },
+  { id: 'go', label: 'Go', file: 'main.go', requiresPro: true },
+  { id: 'rust', label: 'Rust', file: 'main.rs', requiresPro: true },
 ];
 
 export default function Sidebar({
@@ -13,6 +17,8 @@ export default function Sidebar({
   onLanguageChange,
   userCount,
   user,
+  showCodeCast,
+  onToggleCodeCast,
   onOpenPricing,
   onOpenAuth,
   onLogout,
@@ -54,11 +60,31 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* CodeCast Learning Hub Toggle */}
+      <div className="px-4 pt-4">
+        <button
+          onClick={onToggleCodeCast}
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-bold transition-all border ${
+            showCodeCast
+              ? 'bg-cyan-950/70 text-cyan-300 border-cyan-500/50 shadow-md shadow-cyan-950/30'
+              : 'bg-surface-800/70 text-gray-300 border-surface-700 hover:bg-surface-800'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Video size={15} className={showCodeCast ? 'text-cyan-400' : 'text-gray-400'} />
+            <span>CodeCast Video Hub</span>
+          </div>
+          <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-surface-950/70 text-cyan-400">
+            {showCodeCast ? 'ON' : 'OFF'}
+          </span>
+        </button>
+      </div>
+
       {/* Language / File Selector */}
       <div className="px-4 py-4 flex-1 overflow-y-auto">
         <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-semibold text-gray-400 mb-2">
           <FolderOpen size={13} />
-          <span>Active Runtimes</span>
+          <span>7 Sandbox Runtimes</span>
         </div>
 
         <div className="space-y-1">
@@ -108,7 +134,7 @@ export default function Sidebar({
               <span>Unlock Synapse Pro</span>
             </div>
             <p className="text-[11px] text-gray-400 mb-3 leading-relaxed">
-              Unlock C++ Docker containers, 10s timeouts, and Chapa Ethiopian payment gateway integration.
+              Unlock TypeScript, C++, Java, Go, Rust containers, 10s timeouts, and Pro CodeCast masterclasses.
             </p>
             <button
               onClick={onOpenPricing}
