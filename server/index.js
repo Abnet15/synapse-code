@@ -24,8 +24,13 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGODB_LOCAL_URI || 
 
 const app = express();
 
+const normalizedClientUrl = process.env.WEB_CLIENT_URL
+  ? process.env.WEB_CLIENT_URL.replace(/\/$/, '')
+  : 'http://localhost:8080';
+
 const allowedOrigins = [
-  process.env.WEB_CLIENT_URL || 'http://localhost:8080',
+  normalizedClientUrl,
+  'https://synapse-code-seven.vercel.app',
   'http://localhost:5173',
   'http://localhost:8080',
   'http://localhost:3000',

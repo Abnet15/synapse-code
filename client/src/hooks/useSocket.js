@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
+const PRODUCTION_SERVER_URL = 'https://synapse-code-server.onrender.com';
+
 const getSocketServerUrl = () => {
-  if (import.meta.env.VITE_SERVER_URL) {
-    return import.meta.env.VITE_SERVER_URL;
+  const configured = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_SERVER_URL;
+  if (configured) {
+    return configured.replace(/\/$/, '');
   }
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-  const hostname = window.location.hostname || 'localhost';
-  return `${protocol}//${hostname}:5000`;
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return `http://${window.location.hostname}:5000`;
+  }
+  return PRODUCTION_SERVER_URL;
 };
 
 export function useSocket(roomId, username, user) {

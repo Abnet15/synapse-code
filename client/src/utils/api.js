@@ -1,8 +1,14 @@
+const PRODUCTION_SERVER_URL = 'https://synapse-code-server.onrender.com';
+
 const getApiBase = () => {
-  if (import.meta.env.VITE_SERVER_URL) {
-    return `${import.meta.env.VITE_SERVER_URL.replace(/\/$/, '')}/api`;
+  const configured = import.meta.env.VITE_API_URL || import.meta.env.VITE_SERVER_URL;
+  if (configured) {
+    return `${configured.replace(/\/$/, '')}/api`;
   }
-  return 'http://localhost:5000/api';
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return 'http://localhost:5000/api';
+  }
+  return `${PRODUCTION_SERVER_URL}/api`;
 };
 
 const API_BASE = getApiBase();

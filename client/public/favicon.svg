@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="synapseGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#090d16" />
+  <rect x="2" y="2" width="60" height="60" rx="14" stroke="url(#synapseGrad)" stroke-width="3" />
+  <path d="M35 12L17 35H31L29 52L47 29H33L35 12Z" fill="url(#synapseGrad)" stroke="#67e8f9" stroke-width="1.5" stroke-linejoin="round" />
+</svg>

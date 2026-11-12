@@ -95,11 +95,12 @@ export default function EditorWorkspace({
 
   const getYjsUrl = () => {
     if (import.meta.env.VITE_YJS_SERVER_URL) {
-      return import.meta.env.VITE_YJS_SERVER_URL;
+      return import.meta.env.VITE_YJS_SERVER_URL.replace(/\/$/, '');
     }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const hostname = window.location.hostname || 'localhost';
-    return `${protocol}//${hostname}:5000/yjs`;
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      return `ws://${window.location.hostname}:5000/yjs`;
+    }
+    return 'wss://synapse-code-server.onrender.com/yjs';
   };
 
   // Apply incoming remote video-sync events
