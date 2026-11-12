@@ -10,11 +10,15 @@ export default function InterviewGrid({ roomId, username, socket }) {
   const remoteVideoRef = useRef(null);
   const peerRef = useRef(null);
   const localStreamRef = useRef(null);
+  const targetSocketIdRef = useRef(null);
+  const pendingCandidatesRef = useRef([]);
+  const inCallRef = useRef(false);
 
   const [inCall, setInCall] = useState(false);
   const [micEnabled, setMicEnabled] = useState(true);
   const [camEnabled, setCamEnabled] = useState(true);
   const [remoteConnected, setRemoteConnected] = useState(false);
+  const [mediaNotice, setMediaNotice] = useState('');
 
   const [rubric, setRubric] = useState({
     problemSolving: 4,
@@ -25,7 +29,44 @@ export default function InterviewGrid({ roomId, username, socket }) {
   });
   const [rubricSaved, setRubricSaved] = useState(false);
 
+  const acquireLocalStream = async () => {
+    if (localStreamRef.current) return localStreamRef.current;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      setMediaNotice('');
+      return stream;
+    } catch (err) {
+      try {
+        const audioOnly = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        localStreamRef.current = audioOnly;
+        setMediaNotice('Camera unavailable (audio-only mode)');
+        return audioOnly;
+      } catch (audioErr) {
+        setMediaNotice('Media unavailable (receive-only mode)');
+        return null;
+      }
+    }
+  };
+
+  const flushPendingCandidates = async (pc) => {
+    const queued = pendingCandidatesRef.current.splice(0, pendingCandidatesRef.current.length);
+    for (const candidate of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error('Queued ICE candidate error:', err);
+      }
+    }
+  };
+
   const createPeerConnection = () => {
+    if (peerRef.current) {
+      peerRef.current.close();
+      peerRef.current = null;
+    }
+
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
     if (localStreamRef.current) {
@@ -35,15 +76,26 @@ export default function InterviewGrid({ roomId, username, socket }) {
     }
 
     pc.ontrack = (event) => {
-      if (remoteVideoRef.current && event.streams[0]) {
-        remoteVideoRef.current.srcObject = event.streams[0];
+      if (remoteVideoRef.current) {
+        const stream = event.streams?.[0] || new MediaStream([event.track]);
+        remoteVideoRef.current.srcObject = stream;
         setRemoteConnected(true);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+        setRemoteConnected(false);
       }
     };
 
     pc.onicecandidate = (event) => {
       if (event.candidate && socket) {
-        socket.emit('ice-candidate', { roomId, candidate: event.candidate });
+        socket.emit('ice-candidate', {
+          roomId,
+          targetSocketId: targetSocketIdRef.current,
+          candidate: event.candidate,
+        });
       }
     };
 
@@ -56,14 +108,14 @@ export default function InterviewGrid({ roomId, username, socket }) {
 
     const handleOffer = async ({ fromSocketId, offer }) => {
       try {
-        if (!localStreamRef.current) {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-          localStreamRef.current = stream;
-          if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-          setInCall(true);
-        }
-        const pc = peerRef.current || createPeerConnection();
+        targetSocketIdRef.current = fromSocketId;
+        await acquireLocalStream();
+        inCallRef.current = true;
+        setInCall(true);
+
+        const pc = createPeerConnection();
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        await flushPendingCandidates(pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('answer', { roomId, targetSocketId: fromSocketId, answer });
@@ -72,10 +124,12 @@ export default function InterviewGrid({ roomId, username, socket }) {
       }
     };
 
-    const handleAnswer = async ({ answer }) => {
+    const handleAnswer = async ({ fromSocketId, answer }) => {
       try {
-        if (peerRef.current) {
+        targetSocketIdRef.current = fromSocketId;
+        if (peerRef.current && peerRef.current.signalingState === 'have-local-offer') {
           await peerRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+          await flushPendingCandidates(peerRef.current);
         }
       } catch (err) {
         console.error('WebRTC answer handling error:', err);
@@ -84,36 +138,53 @@ export default function InterviewGrid({ roomId, username, socket }) {
 
     const handleIceCandidate = async ({ candidate }) => {
       try {
-        if (peerRef.current && candidate) {
+        if (!candidate) return;
+        if (peerRef.current && peerRef.current.remoteDescription) {
           await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        } else {
+          pendingCandidatesRef.current.push(candidate);
         }
       } catch (err) {
         console.error('WebRTC ICE candidate error:', err);
       }
     };
 
+    const handleWebRtcReady = async ({ fromSocketId }) => {
+      if (!inCallRef.current) return;
+      try {
+        targetSocketIdRef.current = fromSocketId;
+        const pc = createPeerConnection();
+        const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { roomId, targetSocketId: fromSocketId, offer });
+      } catch (err) {
+        console.error('WebRTC re-offer error:', err);
+      }
+    };
+
     socket.on('offer', handleOffer);
     socket.on('answer', handleAnswer);
     socket.on('ice-candidate', handleIceCandidate);
+    socket.on('webrtc-ready', handleWebRtcReady);
+
+    socket.emit('webrtc-ready', { roomId });
 
     return () => {
       socket.off('offer', handleOffer);
       socket.off('answer', handleAnswer);
       socket.off('ice-candidate', handleIceCandidate);
+      socket.off('webrtc-ready', handleWebRtcReady);
     };
   }, [socket, roomId]);
 
   const startCall = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
+      await acquireLocalStream();
+      inCallRef.current = true;
       setInCall(true);
 
       const pc = createPeerConnection();
-      const offer = await pc.createOffer();
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await pc.setLocalDescription(offer);
       socket?.emit('offer', { roomId, offer });
     } catch (err) {
@@ -122,6 +193,9 @@ export default function InterviewGrid({ roomId, username, socket }) {
   };
 
   const endCall = () => {
+    inCallRef.current = false;
+    targetSocketIdRef.current = null;
+    pendingCandidatesRef.current = [];
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
@@ -134,6 +208,7 @@ export default function InterviewGrid({ roomId, username, socket }) {
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     setInCall(false);
     setRemoteConnected(false);
+    setMediaNotice('');
   };
 
   const toggleMic = () => {

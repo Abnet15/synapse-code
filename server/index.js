@@ -210,6 +210,14 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('webrtc-ready', ({ roomId }) => {
+    if (!roomId) return;
+    socket.to(roomId.trim().toUpperCase()).emit('webrtc-ready', {
+      fromSocketId: socket.id,
+      user: currentUsername,
+    });
+  });
+
   socket.on('run-code', async ({ roomId, code, language, isPro }) => {
     if (!roomId || !code || !language) {
       socket.emit('code-output', {
