@@ -25,7 +25,7 @@ exports.assistCode = async (req, res) => {
     if (apiKey) {
       try {
         const response = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
           {
             contents: [{ parts: [{ text: prompt }] }],
           },
@@ -34,7 +34,7 @@ exports.assistCode = async (req, res) => {
 
         const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (aiText) {
-          return res.status(200).json({ action, result: aiText, provider: 'gemini-1.5-flash' });
+          return res.status(200).json({ action, result: aiText, provider: 'gemini-2.5-flash' });
         }
       } catch (geminiErr) {
         console.warn('[AI] Gemini API fallback triggered:', geminiErr.response?.data?.error?.message || geminiErr.message);

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Lesson = require('../models/Lesson');
 
 const DEFAULT_LESSONS = [
@@ -75,15 +76,23 @@ const DEFAULT_LESSONS = [
   },
 ];
 
+const FALLBACK_LESSONS = DEFAULT_LESSONS.map((lesson, idx) => ({
+  _id: `default-lesson-${idx + 1}`,
+  ...lesson,
+}));
+
 exports.getLessons = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(200).json({ lessons: FALLBACK_LESSONS, source: 'fallback' });
+    }
     let lessons = await Lesson.find().sort({ createdAt: 1 });
     if (lessons.length === 0) {
       lessons = await Lesson.insertMany(DEFAULT_LESSONS);
     }
     return res.status(200).json({ lessons });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to fetch lessons.', error: error.message });
+    return res.status(200).json({ lessons: FALLBACK_LESSONS, source: 'fallback' });
   }
 };
 
